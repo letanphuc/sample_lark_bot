@@ -1,4 +1,5 @@
 import json
+import time
 import uuid as uuid_lib
 
 import requests
@@ -123,13 +124,19 @@ def _get_all_messages(access_token, thread_id):
     logger.info(f"Found {len(msgs)} in thread {thread_id}")
 
     def _format_msg(m):
-        if m.get("msg_type", "") != "text":
-            logger.warning("Ignore non-text message")
-            return ""
         msg = m.get("body", "{}").get('content', '{}')
         if msg.startswith('{'):
             msg = json.loads(msg)
-        text = msg.get("text", "")
+        t = m.get("msg_type", "")
+        if t == 'text':
+            text = msg.get("text", "")
+        elif t == 'interactive':
+            elems = msg.get("elements", [[]])[0]
+            text = '\n'.join(elem.get("text", "") for elem in elems)
+        else:
+            logger.warning(f"Unknown message type: {t}")
+            return
+
         role = m.get("sender", {}).get("sender_type")
         return {"role": role, "content": text}
 
@@ -158,6 +165,12 @@ async def handle_message(event):
     received_msg = event["message"]["content"]
     received_msg = json.loads(received_msg)
     message_id = event["message"]["message_id"]
+    create_time = int(event["message"]["create_time"]) / 1000
+
+    # ignore message older than 1 minute
+    if time.time() - create_time > 60:
+        logger.info("Ignoring message older than 1 minute.")
+        return {"message": ""}
 
     if message_id in handled_messages:
         logger.info("Ignoring duplicate message.")
@@ -167,11 +180,12 @@ async def handle_message(event):
     if thread_id := event.get("message", {}).get("thread_id"):
         # get all messages in chat
         msgs = _get_all_messages(access_token, thread_id)
-        response_text = replay(msgs)
 
         if msgs[-1]["role"] != "user":
             logger.info("Ignoring bot response.")
             return {"message": ""}
+
+        response_text = replay(msgs)
     else:
         response_text = replay([{
             "role": "user",
