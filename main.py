@@ -1,6 +1,8 @@
-from fastapi import FastAPI, Request
-import requests
 import json
+import uuid as uuid_lib
+
+import requests
+from fastapi import FastAPI, Request
 from loguru import logger
 
 from agent import replay
@@ -152,9 +154,6 @@ async def handle_message(event):
     # Bot echoes the received message
     received_msg = event["message"]["content"]
     received_msg = json.loads(received_msg)
-    response_text = f"replied text to {received_msg['text']}"
-    logger.info(f"Sending message: {response_text}")
-    open_id = event["sender"]["sender_id"]["open_id"]
     message_id = event["message"]["message_id"]
 
     if thread_id := event.get("message", {}).get("thread_id"):
@@ -167,7 +166,8 @@ async def handle_message(event):
             "content": received_msg["text"]
         }])
 
-    send_message(access_token, open_id, message_id, response_text)
+    # send_message(access_token, open_id, message_id, response_text)
+    reply(access_token, message_id, response_text)
     return {"message": ""}
 
 
@@ -197,6 +197,38 @@ def get_tenant_access_token():
 
     logger.info("Tenant access token obtained successfully.")
     return rsp_dict.get("tenant_access_token", "")
+
+
+def reply(access_token, message_id, text, uuid=None):
+    if uuid is None:
+        uuid = str(uuid_lib.uuid4())
+
+    url = f'https://open.larksuite.com/open-apis/im/v1/messages/{message_id}/reply'
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Bearer {access_token}'
+    }
+    card_content = {
+        "config": {
+            "wide_screen_mode": True
+        },
+        "elements": [
+            {
+                "tag": "markdown",
+                "content": text
+            }
+        ]
+    }
+    data = {
+        "msg_type": "interactive",
+        "content": json.dumps(card_content),
+        "uuid": uuid
+    }
+    response = requests.post(url, headers=headers, json=data)
+    response_data = response.json()
+    logger.info(f"Message sent: {response_data=}")
+
+    return response_data
 
 
 def send_message(token, open_id, message_id, text):
