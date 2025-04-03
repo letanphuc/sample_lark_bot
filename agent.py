@@ -1,7 +1,7 @@
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 
-llm = ChatOpenAI()
+llm = ChatOpenAI(model='gpt-4o')
 
 
 def replay(messages: list[dict]) -> str:
