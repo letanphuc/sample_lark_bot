@@ -114,7 +114,7 @@ def _get_all_messages(access_token, thread_id):
     params = {
         'container_id': thread_id,
         'container_id_type': 'thread',
-        'page_size': 10,
+        'page_size': 20,
         'sort_type': 'ByCreateTimeAsc'
     }
     response = requests.get(url, headers=headers, params=params)
@@ -134,6 +134,9 @@ def _get_all_messages(access_token, thread_id):
         return {"role": role, "content": text}
 
     return [_format_msg(m) for m in msgs if _format_msg(m)]
+
+
+handled_messages = set()
 
 
 async def handle_message(event):
@@ -156,10 +159,19 @@ async def handle_message(event):
     received_msg = json.loads(received_msg)
     message_id = event["message"]["message_id"]
 
+    if message_id in handled_messages:
+        logger.info("Ignoring duplicate message.")
+        return {"message": ""}
+    handled_messages.add(message_id)
+
     if thread_id := event.get("message", {}).get("thread_id"):
         # get all messages in chat
         msgs = _get_all_messages(access_token, thread_id)
         response_text = replay(msgs)
+
+        if msgs[-1]["role"] != "user":
+            logger.info("Ignoring bot response.")
+            return {"message": ""}
     else:
         response_text = replay([{
             "role": "user",
