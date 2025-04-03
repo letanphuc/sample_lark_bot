@@ -7,7 +7,7 @@ app = FastAPI()
 
 APP_ID = "cli_a671071d5138d010"
 APP_SECRET = "oKj6BSaglaA3QpkXFPjkBhQrRPFkeLHb"
-APP_VERIFICATION_TOKEN = "on5GUAgLHG4iMAL4iSkOScZOhmI1ExQI"
+APP_VERIFICATION_TOKEN = "9Hfkx2DEclr4Wvs6AnzpoLO2YSVFrN4v"
 
 '''
 Here is example message:
@@ -59,8 +59,8 @@ async def handle_request(request: Request):
     # Verify if the verification token matches, if not, it means the callback is not from the development platform
     token = obj.get("header", {}).get("token", "")
     if token != APP_VERIFICATION_TOKEN:
-        logger.warning(f"Verification token does not match. Received token: {token}")
-        return {"message": msg}
+        logger.warning(f"Verification token does not match. Received token: {token=}")
+        # return {"message": msg}
 
     # Handle different types of events based on type - schema 1.0
     try:
@@ -102,6 +102,36 @@ def handle_request_url_verify(post_obj):
     return {"challenge": challenge}
 
 
+def _get_all_messages(access_token, thread_id):
+    url = 'https://open.larksuite.com/open-apis/im/v1/messages'
+    headers = {
+        'Authorization': f'Bearer {access_token}'
+    }
+    params = {
+        'container_id': thread_id,
+        'container_id_type': 'thread',
+        'page_size': 20,
+        'sort_type': 'ByCreateTimeAsc'
+    }
+    response = requests.get(url, headers=headers, params=params)
+    data = response.json().get("data", {})
+    msgs = data.get("items", [])
+    logger.info(f"Found {len(msgs)} in thread {thread_id}")
+
+    def _format_msg(m):
+        if m.get("msg_type", "") != "text":
+            logger.warning("Ignore non-text message")
+            return ""
+        msg = m.get("body", "{}").get('content', '{}')
+        if msg.startswith('{'):
+            msg = json.loads(msg)
+        text = msg.get("text", "")
+        role = m.get("sender", {}).get("sender_type")
+        return {"role": role, "text": text}
+
+    return [_format_msg(m) for m in msgs if _format_msg(m)]
+
+
 async def handle_message(event):
     logger.info(f"Handling message event: {event}")
     # Only handle text type messages here, other types of messages are ignored
@@ -122,7 +152,15 @@ async def handle_message(event):
     received_msg = json.loads(received_msg)
     response_text = f"replied text to {received_msg['text']}"
     logger.info(f"Sending message: {response_text}")
-    send_message(access_token, event["sender"]["sender_id"]["open_id"], response_text)
+    open_id = event["sender"]["sender_id"]["open_id"]
+    message_id = event["message"]["message_id"]
+
+    if thread_id := event.get("message", {}).get("thread_id"):
+        # get all messages in chat
+        msgs = _get_all_messages(access_token, thread_id)
+        response_text += str(msgs)
+
+    send_message(access_token, open_id, message_id, response_text)
     return {"message": ""}
 
 
@@ -149,12 +187,12 @@ def get_tenant_access_token():
     if code != 0:
         logger.error(f"Get tenant_access_token error, code: {code}")
         return ""
-    
+
     logger.info("Tenant access token obtained successfully.")
     return rsp_dict.get("tenant_access_token", "")
 
 
-def send_message(token, open_id, text):
+def send_message(token, open_id, message_id, text):
     url = "https://open.feishu.cn/open-apis/message/v4/send/"
 
     headers = {
@@ -163,6 +201,7 @@ def send_message(token, open_id, text):
     }
     req_body = {
         "open_id": open_id,
+        "root_id": message_id,
         "msg_type": "text",
         "content": {
             "text": text
