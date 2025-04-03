@@ -1,4 +1,6 @@
 requests~=2.32.3
 fastapi~=0.115.0
-loguru
+loguru~=0.7.3
 lark-oapi
+langchain-core~=0.3.50
+langchain-openai~=0.3.12

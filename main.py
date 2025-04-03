@@ -3,6 +3,8 @@ import requests
 import json
 from loguru import logger
 
+from agent import replay
+
 app = FastAPI()
 
 APP_ID = "cli_a671071d5138d010"
@@ -110,7 +112,7 @@ def _get_all_messages(access_token, thread_id):
     params = {
         'container_id': thread_id,
         'container_id_type': 'thread',
-        'page_size': 20,
+        'page_size': 10,
         'sort_type': 'ByCreateTimeAsc'
     }
     response = requests.get(url, headers=headers, params=params)
@@ -127,7 +129,7 @@ def _get_all_messages(access_token, thread_id):
             msg = json.loads(msg)
         text = msg.get("text", "")
         role = m.get("sender", {}).get("sender_type")
-        return {"role": role, "text": text}
+        return {"role": role, "content": text}
 
     return [_format_msg(m) for m in msgs if _format_msg(m)]
 
@@ -158,7 +160,12 @@ async def handle_message(event):
     if thread_id := event.get("message", {}).get("thread_id"):
         # get all messages in chat
         msgs = _get_all_messages(access_token, thread_id)
-        response_text += str(msgs)
+        response_text = replay(msgs)
+    else:
+        response_text = replay([{
+            "role": "user",
+            "content": received_msg["text"]
+        }])
 
     send_message(access_token, open_id, message_id, response_text)
     return {"message": ""}
